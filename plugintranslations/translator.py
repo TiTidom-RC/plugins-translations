@@ -234,15 +234,24 @@ class PluginTranslator():
                 # make sure to store text as a target translation for source language
                 prompt.set_translation(self.__source_language, prompt.get_text())
 
-                if self.deepl_translator is not None:
-                    # make call to deepl translator for any missing translations
+        if self.deepl_translator is not None:
+            # collect all (prompt, language) pairs that still need a DeepL call
+            pending: list[tuple] = []
+            for source_file in self.__files.values():
+                for prompt in source_file.get_prompts().values():
                     for target_language in self.__target_languages:
-                        if target_language == self.__source_language:
-                            continue
-                        if not prompt.has_translation(target_language):
-                            tr = self.translate_with_deepl(prompt.get_text(), target_language)
-                            prompt.set_translation(target_language, tr)
-                            self.__existing_translations.add_translation(target_language, prompt.get_text(), tr)
+                        if target_language != self.__source_language and not prompt.has_translation(target_language):
+                            pending.append((prompt, target_language))
+
+            total = len(pending)
+            self.__logger.info(f"{total} text(s) to translate via DeepL")
+            for i, (prompt, target_language) in enumerate(pending, 1):
+                short_text = prompt.get_text()[:60].replace('\n', ' ')
+                self.__logger.info(f"[{i}/{total}] -> {target_language}: '{short_text}'")
+                tr = self.translate_with_deepl(prompt.get_text(), target_language)
+                prompt.set_translation(target_language, tr)
+                self.__existing_translations.add_translation(target_language, prompt.get_text(), tr)
+
         self.__logger.info(f"Number of api call done: {self.__api_call_counter}")
 
     def translate_info_json(self):
@@ -265,8 +274,9 @@ class PluginTranslator():
 
         for target_language in self.__target_languages:
             if target_language in descriptions and descriptions[target_language] != '':
-                self.__logger.debug(f"Translation of description for {target_language} already exists, skipping...")
+                self.__logger.info(f"Description for {target_language} already translated, skipping")
                 continue
+            self.__logger.info(f"Translating info.json description to {target_language}")
             descriptions[target_language] = self.translate_with_deepl(source_desc, target_language)
 
         self.__info_json_content['description'] = descriptions
@@ -275,8 +285,6 @@ class PluginTranslator():
     def translate_with_deepl(self, text: str, target_language: str) -> str:
         if self.__deepl_translator is None:
             return ''
-
-        self.__logger.debug(f"call deepl to translate {text} in {target_language}")
 
         max_retries = 5
         backoff = 5.0
@@ -352,6 +360,8 @@ class PluginTranslator():
                 if len(prompts) > 0:
                     language_result[path] = prompts
 
-            if (len(language_result) > 0):
-                self.__logger.info(f"Will dump {translation_file.as_posix()}")
+            if len(language_result) > 0:
+                self.__logger.info(f"Writing {translation_file.as_posix()} ({sum(len(v) for v in language_result.values())} entries)")
                 translation_file.write_text(json.dumps(language_result, ensure_ascii=False, sort_keys=True, indent=4).replace('/', r'\/'), encoding="UTF-8")
+            else:
+                self.__logger.info(f"No translations for {target_language}, skipping file")
