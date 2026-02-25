@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 import hashlib
+import time
 
 import deepl
 
@@ -143,11 +144,11 @@ class PluginTranslator():
         val = self._get_input(name)
         if val is None:
             raise ValueError(f'Input does not meet specifications: {name}.\n {name} is required')
-        list = [s.strip() for s in val.split(',')]
-        for s in list:
+        values = [s.strip() for s in val.split(',')]
+        for s in values:
             if s not in allowed_values:
                 raise ValueError(f'Input does not meet specifications: {name}.\n {s} not in list: {allowed_values}')
-        return list
+        return values
 
     def _get_input_in_list(self, name: str, allowed_values: list):
         val = self._get_input(name)
@@ -267,22 +268,38 @@ class PluginTranslator():
 
         self.__info_json_content['description'] = descriptions
 
-    @Throttle(seconds=0.1)
+    @Throttle(seconds=0.5)
     def transalte_with_deepl(self, text: str, target_language: str) -> str:
         if self.__deepl_translator is None:
             return ''
 
         self.__logger.debug(f"call deepl to translate {text} in {target_language}")
-        self.__api_call_counter += 1
-        result = self.__deepl_translator.translate_text(
-            text,
-            source_lang=LANGUAGES_TO_DEEPL[self.__source_language],
-            target_lang=LANGUAGES_TO_DEEPL[target_language],
-            preserve_formatting=True,
-            context='home automation',
-            glossary=self.__glossary[target_language],
-            model_type='prefer_quality_optimized'
-        )
+
+        max_retries = 5
+        backoff = 5.0
+        result = None
+        for attempt in range(max_retries):
+            try:
+                self.__api_call_counter += 1
+                result = self.__deepl_translator.translate_text(
+                    text,
+                    source_lang=LANGUAGES_TO_DEEPL[self.__source_language],
+                    target_lang=LANGUAGES_TO_DEEPL[target_language],
+                    preserve_formatting=True,
+                    context='home automation',
+                    glossary=self.__glossary[target_language],
+                    model_type='prefer_quality_optimized'
+                )
+                break
+            except deepl.TooManyRequestsException:
+                if attempt < max_retries - 1:
+                    wait = backoff * (2 ** attempt)
+                    self.__logger.warning(f"DeepL rate limit hit, retrying in {wait:.0f}s (attempt {attempt + 1}/{max_retries})...")
+                    time.sleep(wait)
+                else:
+                    self.__logger.error("DeepL rate limit hit, max retries reached, giving up on this text.")
+                    return ''
+
         if not isinstance(result, deepl.TextResult):
             self.__logger.error(f"Unexpected result type: {type(result)}")
             return ''

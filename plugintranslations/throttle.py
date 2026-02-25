@@ -7,7 +7,7 @@ class Throttle(object):
     Decorator that prevents a function from being called more than once every time period.
     """
 
-    def __init__(self, seconds: float = 0.1):
+    def __init__(self, seconds: float = 0.5):
         time.monotonic()
         self.throttle_period = seconds
         self.time_of_last_call = 0.0
