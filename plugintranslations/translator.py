@@ -192,6 +192,7 @@ class PluginTranslator():
                     if deepl_glossary.name == md5_hash:
                         self.__logger.info("Already exists")
                         self.__glossary[target_language] = deepl_glossary
+                        break
                     else:
                         self.__logger.info(f"Delete existing old glossary {deepl_glossary.name}")
                         deepl_translator.delete_glossary(deepl_glossary)

@@ -20,4 +20,4 @@ class Prompt():
         self._translations = translations
 
     def get_translations(self):
-        return self._translations
+        return dict(self._translations)
