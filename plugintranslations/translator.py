@@ -1,9 +1,9 @@
+import hashlib
 import json
 import logging
 import os
-from pathlib import Path
-import hashlib
 import time
+from pathlib import Path
 
 import deepl
 
@@ -210,10 +210,10 @@ class PluginTranslator():
             for root, dirs, files in plugin_dir.walk():
                 dirs[:] = [d for d in dirs if not (root.name == "core" and d == 'i18n')]
 
-                for file in files:
-                    if file == 'info.json':
+                for filename_str in files:
+                    if filename_str == 'info.json':
                         continue
-                    filename = Path(file)
+                    filename = Path(filename_str)
                     if filename.suffix in FILE_EXTS:
                         absolute_file_path = root/filename
                         jeedom_file_path = absolute_file_path.relative_to(self.__plugin_root)
@@ -245,12 +245,21 @@ class PluginTranslator():
 
             total = len(pending)
             self.__logger.info(f"{total} text(s) to translate via DeepL")
-            for i, (prompt, target_language) in enumerate(pending, 1):
-                short_text = prompt.get_text()[:60].replace('\n', ' ')
-                self.__logger.info(f"[{i}/{total}] -> {target_language}: '{short_text}'")
-                tr = self.translate_with_deepl(prompt.get_text(), target_language)
-                prompt.set_translation(target_language, tr)
-                self.__existing_translations.add_translation(target_language, prompt.get_text(), tr)
+            call_count = 0
+            for prompt, target_language in pending:
+                text = prompt.get_text()
+                # Re-check cache: same text may appear in multiple files; avoid redundant DeepL calls
+                if not prompt.has_translation(target_language):
+                    cached = self.__existing_translations.get_translations(text)
+                    if target_language in cached and cached[target_language] != '':
+                        prompt.set_translation(target_language, cached[target_language])
+                        continue
+                    call_count += 1
+                    short_text = text[:60].replace('\n', ' ')
+                    self.__logger.info(f"[{call_count}] -> {target_language}: '{short_text}'")
+                    tr = self.translate_with_deepl(text, target_language)
+                    prompt.set_translation(target_language, tr)
+                    self.__existing_translations.add_translation(target_language, text, tr)
 
         self.__logger.info(f"Number of api call done: {self.__api_call_counter}")
 
@@ -271,6 +280,9 @@ class PluginTranslator():
             self.__logger.warning(f"You should have a 'Description' in info.json that matches your source language: {self.__source_language}")
             return
         source_desc = descriptions[self.__source_language]
+        if not source_desc:
+            self.__logger.warning("Description in info.json is empty, skipping translation")
+            return
 
         for target_language in self.__target_languages:
             if target_language in descriptions and descriptions[target_language] != '':
@@ -330,17 +342,17 @@ class PluginTranslator():
 
     def _get_translations_from_json_files(self, translations_dir: Path):
         for language in self.__target_languages:
-            file = translations_dir/f"{language}.json"
-            if not file.exists():
-                self.__logger.info(f"file {file.as_posix()} not found !?")
+            translation_file = translations_dir/f"{language}.json"
+            if not translation_file.exists():
+                self.__logger.info(f"file {translation_file.as_posix()} not found !?")
                 continue
             try:
-                data = json.loads(file.read_text(encoding="UTF-8"))
+                data = json.loads(translation_file.read_text(encoding="UTF-8"))
                 for path in data:
                     for text in data[path]:
                         self.__existing_translations.add_translation(language, text, data[path][text])
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                self.__logger.error(f"Error while reading {file.as_posix()}: {e}")
+            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as e:
+                self.__logger.error(f"Error while reading {translation_file.as_posix()}: {e}")
 
     def write_plugin_translations(self):
         self.__logger.info("Write translations files...")
