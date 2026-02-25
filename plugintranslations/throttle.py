@@ -8,7 +8,6 @@ class Throttle(object):
     """
 
     def __init__(self, seconds: float = 0.5):
-        time.monotonic()
         self.throttle_period = seconds
         self.time_of_last_call = 0.0
 

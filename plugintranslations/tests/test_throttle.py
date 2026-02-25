@@ -1,5 +1,4 @@
 import time
-import pytest
 from plugintranslations.throttle import Throttle
 
 
@@ -18,9 +17,6 @@ class TestThrottle():
         for _ in range(max_calls):
             result = test_function()
             count += 1
-            if count < max_calls:
-                # time.sleep(1.9)
-                pass
             assert result == "Function executed"
         end = time.monotonic()
         elapsed = end - start

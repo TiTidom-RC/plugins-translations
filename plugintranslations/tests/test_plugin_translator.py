@@ -61,10 +61,9 @@ class TestPluginTranslator():
 
         translation_path = self.__plugin_root/TRANSLATIONS_FILES_PATH
         translation_path.mkdir(parents=True, exist_ok=True)
-        translation_file = translation_path/f"{EN_US}.json"
-        translation_file.touch()
+        (translation_path/f"{EN_US}.json").write_text('{}', encoding="UTF-8")
 
         # Act
         self._test_translate.get_plugin_translations()
-        # Assert
-        assert 1
+        # Assert: no exception raised
+        assert self._test_translate is not None
